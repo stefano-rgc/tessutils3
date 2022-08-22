@@ -270,44 +270,6 @@ if __name__ == '__main__':
     # Catalog containing the TIC numbers to download
     cat = '/STER/stefano/work/catalogs/TICv8_2+sectors/TIC_OBcandidates_FEROS_2+sectors_bright.csv'
     TICs = pd.read_csv(cat, usecols=['ID'], squeeze=True, dtype=str)
-
-    # Skip TICs already downloaded (if there is already at least one downloaded sector for this TIC, this TIC is skipped)
-    #files = [file.name for file in outputdir.glob(name_pattern.format(TIC='*', SECTOR='*'))]
-    #return_TIC = lambda name: re.match(name_pattern.format(TIC='(\d+)', SECTOR='\d+'),name).group(1)
-    #TICs_skip = pd.Series(files, dtype=str).apply(return_TIC)
-    #TICs = pd.concat([TICs, TICs_skip]).drop_duplicates(keep=False)
-    
-    # Recycle tpfs already downloaded in other directory   
-    #otherdir = Path('/STER/stefano/work/catalogs/TICv8_S-CVZ_OBAFcandidates/tpfs')
-    #filepaths = [filepath for filepath in otherdir.glob(name_pattern.format(TIC='*', SECTOR='*'))]
-    #return_TIC = lambda name: re.match(name_pattern.format(TIC='(\d+)', SECTOR='\d+'),name).group(1)
-    #return_SEC = lambda name: re.match(name_pattern.format(TIC='\d+', SECTOR='(\d+)'),name).group(1)
-    #df = pd.DataFrame({'path':filepaths})
-    #df['name'] = df['path'].apply(getattr, args=('name',))
-    #df['tic'] = df['name'].apply(return_TIC)
-    #df['sec'] = df['name'].apply(return_SEC).astype('int32')
-    #group = df.groupby('tic')    
-    ## Create the soft links
-    #for TIC in TICs:
-    #    if TIC in group.groups:
-    #        # Make soft link
-    #        for filepath in group.get_group(TIC)['path']:
-    #            command = f'ln -s {filepath} {outputdir}'
-    #            os.system(command)   
-    
-    # Skip TICs with 13 sectors already downloaded
-    files = [file.name for file in outputdir.glob(name_pattern.format(TIC='*', SECTOR='*'))]
-    return_TIC = lambda name: re.match(name_pattern.format(TIC='(\d+)', SECTOR='\d+'),name).group(1)
-    return_SEC = lambda name: re.match(name_pattern.format(TIC='\d+', SECTOR='(\d+)'),name).group(1)
-    df = pd.DataFrame({'name':files})
-    df['tic'] = df['name'].apply(return_TIC)
-    df['sec'] = df['name'].apply(return_SEC).astype('int32')
-    df.query('sec<=13', inplace=True) #Consider only sectors 1..13
-    group = df.groupby('tic')    
-    # TIC of images with 13 or moer sectors downloaded
-    TICs_skip = pd.Series(group.count().query('sec >= 13').index.tolist(), dtype=str)
-    TICs = pd.concat([TICs, TICs_skip]).drop_duplicates(keep=False)
-    del df
     
     # Format as a list of strings
     TICs = TICs.tolist()
