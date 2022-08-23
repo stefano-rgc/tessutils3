@@ -52,7 +52,6 @@ def make_softlink_to_tpfs(otherdir, TICs=None, outputdir=None, pattern=None, out
     """
     Recycle target TPFs already downloaded in other directory via soft links
     """   
-    
     pattern = validate_name_pattern(pattern)
     outputpattern = validate_name_pattern(outputpattern)
     outputdir = Path('tpfs') if outputdir is None else Path(outputdir)
