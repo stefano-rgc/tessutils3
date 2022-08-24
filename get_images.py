@@ -36,7 +36,7 @@ def download_tpf(TIC,
             break # Exit the loop if TIC is found
         except Exception as e:
             e_name = e.__class__.__name__
-            print(f'MAST query attempt {tries}, TIC = {TIC}. Excepion {e_name}: {e}')
+            print(f'MAST query attempt {tries}, TIC = {TIC}. Excepion -> {e_name}: {e}')
         tries += 1
 
     if len(tesscuts) == 0:
@@ -81,7 +81,7 @@ def download_tpf(TIC,
     ind = np.argwhere(files==True).flatten()
     if len(ind) > 0:
         skkiped_secs = ','.join(secs[ind].astype(str))
-        print(f'Skipped: Already downloaded sectors for TIC {TIC}: {skkiped_secs}.')
+        print(f'Skipped: Already downloaded sectors for TIC={TIC}: {skkiped_secs}.')
         ind = np.argwhere(files==False).flatten().tolist()
         tesscuts = tesscuts[ind]
         if len(tesscuts) == 0:
@@ -152,13 +152,13 @@ def download_tpfs(TICs, progressbar=False, ncores=None, **kwargs):
 def test_download_tpfs():
     start_t =  time.perf_counter()
     TICs = [
-            293270956,
-            32150270,
-            349835272
+            38845463,
+            30192406,
+            374944608
             ]
     outputdir = Path('tpfs')
-    sectors = np.arange(1,6)
-    download_tpfs(TICs, progressbar=True, ncores=1, outputdir=outputdir, sectors=sectors)
+    sectors = np.arange(1,14)
+    download_tpfs(TICs, progressbar=True, ncores=None, outputdir=outputdir, sectors=sectors)
     end_t =  time.perf_counter()
     duration = end_t - start_t
     print(f'Duration: {duration}')
