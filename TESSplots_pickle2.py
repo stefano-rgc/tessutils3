@@ -73,10 +73,28 @@ def chunks(lst, n):
     for i in range(0, len(lst), n):
         yield lst[i:i + n]
         
-def Normalize_lc(lc):
-    lc.flux -= np.median(lc.flux)
-    return lc
+# def Normalize_lc(flux):
+#     '''Function applied to light curves of individual TESS sectors before stitching them'''
+#     # flux -= np.median(flux)
+#     median = np.median(flux)
+#     flux = (flux-median)/median
+#     return flux
 
+def Normalize_lc(flux):
+    '''Function applied to light curves of individual TESS sectors before stitching them'''
+    try:
+        # flux -= np.median(flux)
+        median = np.median(flux)
+        flux = (flux-median)/median
+        return flux
+    except Exception:
+        lc = flux
+        flux = lc.flux.value
+        time = lc.time.value
+        median = np.median(flux)
+        flux = (flux-median)/median
+        return lk.LightCurve(time=time, flux=flux)
+    
 def plot_images(fig,grid,FITS,TitleFontSize,AnnFontSize):
     
     # Get the names  of the extension in the FITS file
@@ -527,328 +545,6 @@ def finder_TIC_files(TIC,
         filenames = sort_names(filenames,sort_pattern)
     return filenames
 
-def create_plot(filenames,
-                pdfname=Path('diagnosis.pdf')):
-    
-    # Ensure filenames is a list of pathlib.Path instances
-    if not isinstance(filenames,list):
-       raise TypeError('filenames must be a list of str instances. Ex: filenames=["filename1", "filename2"]')
-    for name in filenames:
-        if not isinstance(name,str):
-            raise TypeError('filenames must be a list of str instances. Ex: filenames=["filename1"]')
-
-    
-    nsectors = len(filenames)
-    
-    with PdfPages(pdfname) as pdf:
-    
-        # Plot parapeters
-        fsize=7
-        params = {'axes.labelsize': fsize,
-                  'axes.titlesize': fsize,
-                  'legend.fontsize': fsize/1.5,
-                  'xtick.major.size':fsize/7,
-                  'xtick.major.width':fsize/7/10,
-                  'xtick.minor.size':0,
-                  'xtick.minor.width':fsize/7/10,
-                  'ytick.major.size':fsize/7,
-                  'ytick.major.width':fsize/7/10,
-                  'ytick.minor.size':0,
-                  'ytick.minor.width':fsize/7/10,
-                  'axes.linewidth': fsize/7/10,
-                  'lines.linewidth': fsize/7/10,
-                  'xtick.labelsize': fsize*0.75,
-                  'ytick.labelsize': fsize*0.75}
-        plt.rcParams.update(params)
-        fig_width, fig_height = 8.27, 24
-        ax_sector_heights = np.repeat(3,nsectors)
-        ax_stitched_heights = np.array([1.3,1.3])
-        fig_sectors_height = np.sum(ax_sector_heights)
-        fig_stitcheds_height = np.sum(ax_stitched_heights)
-        fig_stitcheds_sectors_hratio = fig_stitcheds_height/fig_sectors_height
-        fig_sectors_height = fig_height/(fig_stitcheds_sectors_hratio+1)
-        fig_stitcheds_height = fig_height-fig_sectors_height
-        fig_sectors_height /= 13
-        fig_sectors_height *= nsectors
-        fig_height = fig_sectors_height+fig_stitcheds_height
-    
-        # Create figure
-        fig =  plt.figure(figsize=(fig_width, fig_height), constrained_layout=False, dpi=300)
-        
-        # Initialize main grid of vertical axes
-        outer_grid = fig.add_gridspec(nsectors+2, 1, height_ratios=[*ax_sector_heights,*ax_stitched_heights], hspace=0.2)
-        
-        # List to store the detrended light curves from each sector
-        lcs = []
-        # List to store the time intervals of each sector
-        sector_intervals = []
-        
-        # Plots for each sector
-        for i in range(nsectors):
-            
-            # Read the data
-            file = filenames[i]
-            FITS = fits.open(file)
-            
-            # Create the 3 horizontal axes
-            hgrid = outer_grid[i,0].subgridspec(1, 3, width_ratios=[5,1,1], wspace=0)
-    
-            # Plot TESS images
-            flag = plot_images(fig,hgrid[2],FITS,fsize*0.75,fsize*0.75)
-            # If not all images
-            if flag == False:
-                ax = fig.add_subplot(hgrid[0])
-                text = FITS['PRIMARY'].header['TAG']
-                text = '\n'.join([t for t in chunks(text,47)]  )
-                ax.text(0.5,0.5, text, transform=ax.transAxes, fontsize=1.1*fsize, ha='center', va='center', color='green', wrap=True)
-                continue
-    
-            # Read the data
-            tbhdu = FITS['TABLE']
-    
-            # Plot the stacked plot and PCA plot
-            flag = triple_stacked_and_PCA_plot(fig,hgrid,FITS,tbhdu,fsize)
-            if flag == False:
-                continue
-    
-            # Collect the detrended light curve without outliers of each sector
-            flux, time = get_from_tbhdu(tbhdu,['detrended_flux','detrended_time'])
-            lc = lk.LightCurve(time=time, flux=flux)
-            lcs.append(lc)
-            # Collect the time intervals of each sector
-            time = get_from_tbhdu(tbhdu,['raw_time'])
-            tmin, tmax = np.min(time), np.max(time)
-            sector_intervals.append((tmin,tmax))        
-    
-        # Set the title
-        tic = FITS['OLD.PRIMARY'].header['TICID']
-        axs = fig.get_axes()
-        pos = np.array([ [ax.get_position().xmin,ax.get_position().ymax] for ax in axs ])
-        ind = np.argmax(pos[:,1], axis=0)
-        axs[ind].text(0.5, 1.0, f'TIC {tic}', transform=axs[ind].transAxes, fontsize=fsize, ha='center', va='bottom', color='k')
-    
-        
-        # Plot also stitched light curves without extra filters + its periodogram
-        if len(lcs) > 1:
-            
-            # Sticht the light curve
-            lc = lk.LightCurveCollection(lcs).stitch(corrector_func=Normalize_lc)        
-    
-            # Plot the stitched light curve
-            ax_stitched = fig.add_subplot(outer_grid[-2])
-            ax_stitched.scatter(lc.time, lc.flux, s=2, marker='.', linewidths=0)
-            for i,interval in enumerate(sector_intervals):
-                tmin, tmax = interval[0], interval[1]
-                ax_stitched.axvspan(tmin, tmax, facecolor='gray', alpha=0.30 if i%2==0 else 0.15, edgecolor='None')
-            ax_stitched.set_ylabel('e$^{-}/s$')
-    
-            # Generate the Lomb-Scarglet periodogram
-            pg = lc.to_periodogram()
-    
-            # Get the periodogram SNR by smoothing the power to obtain the background noise level
-            snr_spectrum, pg_bkg = pg.flatten(method='logmedian', filter_width=0.3, return_trend=True)
-            # Select SNR greater than 4 and 3
-            mask_SNR4 = snr_spectrum.power >=  4
-            mask_SNR3 = snr_spectrum.power >=  3
-            # Find the estimative period of the peaks
-            ind_peaks4 = peakutils.indexes(snr_spectrum.power[mask_SNR4], thres=0.0, min_dist=1, thres_abs=True)
-            ind_peaks3 = peakutils.indexes(snr_spectrum.power[mask_SNR3], thres=0.0, min_dist=1, thres_abs=True)
-    
-            # Plot the LS periodogram
-            ax_pg = fig.add_subplot(outer_grid[-1])
-            x, y = pg.period.value, pg.power.value
-            ax_pg.plot(x, y, zorder=2)
-            # Plot detections
-            if len(ind_peaks3) > 0:
-                ax_pg.scatter(x[mask_SNR3][ind_peaks3], y[mask_SNR3][ind_peaks3], marker='o', c='g', s=1, label='SNR > 3', rasterized=False, zorder=3) #, edgecolors='k', linewidth=0.2
-            if len(ind_peaks4) > 0:
-                ax_pg.scatter(x[mask_SNR4][ind_peaks4], y[mask_SNR4][ind_peaks4], marker='o', c='red', s=1, label='SNR > 4', rasterized=False, zorder=4)
-            # Plot background
-            x, y = pg_bkg.period.value, pg_bkg.power.value
-            ax_pg.plot(x, y, ls='dotted', color='lime', label=None, lw=1, rasterized=False)
-            # Axes limit
-            if len(ind_peaks3) > 0:
-                ind, mask = ind_peaks3, mask_SNR3
-                if len(ind_peaks4) > 0:
-                    ind, mask = ind_peaks4, mask_SNR4
-                scale_factor = 1.1
-                xmin = x[mask_SNR4][ind_peaks4].min()
-                xmax = x[mask_SNR4][ind_peaks4].max()
-                xmax_minus_xmin = xmax - xmin
-                xmax_plus_xmin = xmax + xmin
-                xmax_new = 0.5*( scale_factor*xmax_minus_xmin + xmax_plus_xmin) 
-                xmin_new = xmax_plus_xmin - xmax_new
-            else:
-                xmin_new, xmax_new = 0, 20
-            ax_pg.set_xlim(xmin_new,xmax_new)
-            lgnd = ax_pg.legend(ncol=1, title_fontsize=3, loc='best', fontsize=0.75*fsize, markerscale=1,frameon=False, handletextpad=0.1)
-            ax_pg.set_xlabel('Period (days)')
-            ax_pg.set_ylabel('e$^{-}/s$')
-    
-        fig.tight_layout()
-        
-        pdf.savefig(fig,bbox_inches='tight')
-        
-        
-def create_only_plot(filenames):
-    
-    # Ensure filenames is a list of pathlib.Path instances
-    if not isinstance(filenames,list):
-       raise TypeError('filenames must be a list of str instances. Ex: filenames=["filename1", "filename2"]')
-    for name in filenames:
-        if not isinstance(name,str):
-            raise TypeError('filenames must be a list of str instances. Ex: filenames=["filename1"]')
-
-    nsectors = len(filenames)
-    
-    # Plot parapeters
-    fsize=7
-    params = {'axes.labelsize': fsize,
-              'axes.titlesize': fsize,
-              'legend.fontsize': fsize/1.5,
-              'xtick.major.size':fsize/7,
-              'xtick.major.width':fsize/7/10,
-              'xtick.minor.size':0,
-              'xtick.minor.width':fsize/7/10,
-              'ytick.major.size':fsize/7,
-              'ytick.major.width':fsize/7/10,
-              'ytick.minor.size':0,
-              'ytick.minor.width':fsize/7/10,
-              'axes.linewidth': fsize/7/10,
-              'lines.linewidth': fsize/7/10,
-              'xtick.labelsize': fsize*0.75,
-              'ytick.labelsize': fsize*0.75}
-    plt.rcParams.update(params)
-    fig_width, fig_height = 8.27, 24
-    ax_sector_heights = np.repeat(3,nsectors)
-    ax_stitched_heights = np.array([1.3,1.3])
-    fig_sectors_height = np.sum(ax_sector_heights)
-    fig_stitcheds_height = np.sum(ax_stitched_heights)
-    fig_stitcheds_sectors_hratio = fig_stitcheds_height/fig_sectors_height
-    fig_sectors_height = fig_height/(fig_stitcheds_sectors_hratio+1)
-    fig_stitcheds_height = fig_height-fig_sectors_height
-    fig_sectors_height /= 13
-    fig_sectors_height *= nsectors
-    fig_height = fig_sectors_height+fig_stitcheds_height
-
-    # Create figure
-    fig =  plt.figure(figsize=(fig_width, fig_height), constrained_layout=False, dpi=300)
-    
-    # Initialize main grid of vertical axes
-    outer_grid = fig.add_gridspec(nsectors+2, 1, height_ratios=[*ax_sector_heights,*ax_stitched_heights], hspace=0.2)
-    
-    # List to store the detrended light curves from each sector
-    lcs = []
-    # List to store the time intervals of each sector
-    sector_intervals = []
-    
-    # Plots for each sector
-    for i in range(nsectors):
-        
-        # Read the data
-        file = filenames[i]
-        FITS = fits.open(file)
-        
-        # Create the 3 horizontal axes
-        hgrid = outer_grid[i,0].subgridspec(1, 3, width_ratios=[5,1,1], wspace=0)
-
-        # Plot TESS images
-        flag = plot_images(fig,hgrid[2],FITS,fsize*0.75,fsize*0.75)
-        # If not all images
-        if flag == False:
-            ax = fig.add_subplot(hgrid[0])
-            text = FITS['PRIMARY'].header['TAG']
-            text = '\n'.join([t for t in chunks(text,47)]  )
-            ax.text(0.5,0.5, text, transform=ax.transAxes, fontsize=1.1*fsize, ha='center', va='center', color='green', wrap=True)
-            continue
-
-        # Read the data
-        tbhdu = FITS['TABLE']
-
-        # Plot the stacked plot and PCA plot
-        flag = triple_stacked_and_PCA_plot(fig,hgrid,FITS,tbhdu,fsize)
-        if flag == False:
-            continue
-
-        # Collect the detrended light curve without outliers of each sector
-        flux, time = get_from_tbhdu(tbhdu,['detrended_flux','detrended_time'])
-        lc = lk.LightCurve(time=time, flux=flux)
-        lcs.append(lc)
-        # Collect the time intervals of each sector
-        time = get_from_tbhdu(tbhdu,['raw_time'])
-        tmin, tmax = np.min(time), np.max(time)
-        sector_intervals.append((tmin,tmax))        
-
-    # Set the title
-    tic = FITS['OLD.PRIMARY'].header['TICID']
-    axs = fig.get_axes()
-    pos = np.array([ [ax.get_position().xmin,ax.get_position().ymax] for ax in axs ])
-    ind = np.argmax(pos[:,1], axis=0)
-    axs[ind].text(0.5, 1.0, f'TIC {tic}', transform=axs[ind].transAxes, fontsize=fsize, ha='center', va='bottom', color='k')
-
-    
-    # Plot also stitched light curves without extra filters + its periodogram
-    if len(lcs) > 1:
-        
-        # Sticht the light curve
-        lc = lk.LightCurveCollection(lcs).stitch(corrector_func=Normalize_lc)        
-
-        # Plot the stitched light curve
-        ax_stitched = fig.add_subplot(outer_grid[-2])
-        ax_stitched.scatter(lc.time, lc.flux, s=2, marker='.', linewidths=0)
-        for i,interval in enumerate(sector_intervals):
-            tmin, tmax = interval[0], interval[1]
-            ax_stitched.axvspan(tmin, tmax, facecolor='gray', alpha=0.30 if i%2==0 else 0.15, edgecolor='None')
-        ax_stitched.set_ylabel('e$^{-}/s$')
-
-        # Generate the Lomb-Scarglet periodogram
-        pg = lc.to_periodogram()
-
-        # Get the periodogram SNR by smoothing the power to obtain the background noise level
-        snr_spectrum, pg_bkg = pg.flatten(method='logmedian', filter_width=0.3, return_trend=True)
-        # Select SNR greater than 4 and 3
-        mask_SNR4 = snr_spectrum.power >=  4
-        mask_SNR3 = snr_spectrum.power >=  3
-        # Find the estimative period of the peaks
-        ind_peaks4 = peakutils.indexes(snr_spectrum.power[mask_SNR4], thres=0.0, min_dist=1, thres_abs=True)
-        ind_peaks3 = peakutils.indexes(snr_spectrum.power[mask_SNR3], thres=0.0, min_dist=1, thres_abs=True)
-
-        # Plot the LS periodogram
-        ax_pg = fig.add_subplot(outer_grid[-1])
-        x, y = pg.period.value, pg.power.value
-        ax_pg.plot(x, y, zorder=2)
-        # Plot detections
-        if len(ind_peaks3) > 0:
-            ax_pg.scatter(x[mask_SNR3][ind_peaks3], y[mask_SNR3][ind_peaks3], marker='o', c='yellow', s=2, label='SNR > 3', rasterized=False, zorder=3, edgecolors='k', linewidth=0.2) #, edgecolors='k', linewidth=0.2
-        if len(ind_peaks4) > 0:
-            ax_pg.scatter(x[mask_SNR4][ind_peaks4], y[mask_SNR4][ind_peaks4], marker='o', c='red', s=1, label='SNR > 4', rasterized=False, zorder=4)
-        # Plot background
-        x, y = pg_bkg.period.value, pg_bkg.power.value
-        ax_pg.plot(x, y, ls='dotted', color='lime', label=None, lw=1, rasterized=False)
-        # Axes limit
-        if len(ind_peaks3) > 0:
-            ind, mask = ind_peaks3, mask_SNR3
-            if len(ind_peaks4) > 0:
-                ind, mask = ind_peaks4, mask_SNR4
-            scale_factor = 1.1
-            xmin = x[mask_SNR4][ind_peaks4].min()
-            xmax = x[mask_SNR4][ind_peaks4].max()
-            xmax_minus_xmin = xmax - xmin
-            xmax_plus_xmin = xmax + xmin
-            xmax_new = 0.5*( scale_factor*xmax_minus_xmin + xmax_plus_xmin) 
-            xmin_new = xmax_plus_xmin - xmax_new
-        else:
-            xmin_new, xmax_new = 0, 20
-        ax_pg.set_xlim(xmin_new,xmax_new)
-        lgnd = ax_pg.legend(ncol=1, title_fontsize=3, loc='best', fontsize=0.75*fsize, markerscale=1,frameon=False, handletextpad=0.1)
-        ax_pg.set_xlabel('Period (days)')
-        ax_pg.set_ylabel('e$^{-}/s$')
-
-    fig.tight_layout()
-    
-    return fig
-
-
 def create_only_plot_pickle(filenames):
     '''
 
@@ -970,7 +666,10 @@ def create_only_plot_pickle(filenames):
 
         # Plot the stitched light curve
         ax_stitched = fig.add_subplot(outer_grid[-2])
-        ax_stitched.scatter(lc.time, lc.flux, s=2, marker='.', linewidths=0)
+        try:
+            ax_stitched.scatter(lc.time.value, lc.flux.value*1000, s=2, marker='.', linewidths=0)
+        except AttributeError:
+            ax_stitched.scatter(lc.time, lc.flux*1000, s=2, marker='.', linewidths=0)
         for i,interval in enumerate(sector_intervals):
             tmin, tmax = interval[0], interval[1]
             ax_stitched.axvspan(tmin, tmax, facecolor='gray', alpha=0.30 if i%2==0 else 0.15, edgecolor='None')
@@ -1081,8 +780,13 @@ if __name__ == '__main__':
     # I/O directories
     # outputdir = Path('/lhome/stefano/Documents/work/refinemont_lc_extraction/tpfs_test/corrected/arich/pickled/sector_grouped')
     # inputdir = Path('/lhome/stefano/Documents/work/refinemont_lc_extraction/tpfs_test/corrected/arich/pickled/sector_grouped')
-    outputdir = Path('/lhome/stefano/Documents/work/catalogs/Luc')
-    inputdir = Path('/lhome/stefano/Documents/work/catalogs/Luc/set')
+    # outputdir = Path('/lhome/stefano/Documents/work/catalogs/Luc')
+    # inputdir = Path('/lhome/stefano/Documents/work/catalogs/Luc/set')
+    outputdir = Path('../plots1')
+    if not outputdir.exists():
+        outputdir.mkdir(parents=True)
+
+    inputdir = Path('../sector_grouped1')
     
     file_pattern='tess{TIC}_allsectors_corrected.pickled'
     
@@ -1099,11 +803,12 @@ if __name__ == '__main__':
     # TICs = '30322459'
     # TICs = '40795195'
     # TICs = '96651307'
-    TICs = '279952991'
+    # TICs = '279952991'
+    TICs = '374944608'
     
     
-    TICs = pd.read_csv('/lhome/stefano/Documents/work/catalogs/Luc/TICs_candidates.list')
-    TICs = TICs.astype(str).values.flatten().tolist()
+    # TICs = pd.read_csv('/lhome/stefano/Documents/work/catalogs/Luc/TICs_candidates.list')
+    # TICs = TICs.astype(str).values.flatten().tolist()
     
     
     # Ensure TICs is not an int instance

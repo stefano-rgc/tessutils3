@@ -8,7 +8,10 @@ import lightkurve as lk
 from IPython import embed
 
 def Normalize_lc(flux):
-    flux -= np.median(flux)
+    '''Function applied to light curves of individual TESS sectors before stitching them'''
+    # flux -= np.median(flux)
+    median = np.median(flux)
+    flux = (flux-median)/median
     return flux
 
 def summary_table_single(TIC,

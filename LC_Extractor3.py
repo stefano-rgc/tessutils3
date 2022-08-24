@@ -844,10 +844,16 @@ def extract_light_curve(fits_filename,outputdir,return_msg=True):
     centroid_row -= tpf.row
     sqrt_col2_row2 = np.sqrt(centroid_col**2+centroid_row**2)
     # Store to results
-    results['centroids'] = {'col':centroid_col,\
-                            'row':centroid_row,\
-                            'sqrt_col2_row2':sqrt_col2_row2,\
-                            'time':tpf.time}
+    try:
+        results['centroids'] = {'col':centroid_col,\
+                                'row':centroid_row,\
+                                'sqrt_col2_row2':sqrt_col2_row2,\
+                                'time':tpf.time.value}
+    except AttributeError:
+        results['centroids'] = {'col':centroid_col,\
+                                'row':centroid_row,\
+                                'sqrt_col2_row2':sqrt_col2_row2,\
+                                'time':tpf.time}
 
     # Fit the image and find the contamination fraction within the aperture mask
     fitted_image, err_msg = contamination(results, median_image,ap_mask,\
